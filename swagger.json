@@ -1,0 +1,37 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+      "title": "Product Service API",
+      "version": "1.0.0"
+    },
+    "paths": {
+      "/product/available": {
+        "get": {
+          "summary": "Get all products",
+          "responses": {
+            "200": {
+              "description": "List of products"
+            }
+          }
+        }
+      },
+      "/product/{productId}": {
+        "get": {
+          "summary": "Get product by ID",
+          "parameters": [
+            {
+              "name": "productId",
+              "in": "path",
+              "required": true,
+              "schema": { "type": "string" }
+            }
+          ],
+          "responses": {
+            "200": { "description": "Single product" },
+            "404": { "description": "Product not found" }
+          }
+        }
+      }
+    }
+  }
+  
