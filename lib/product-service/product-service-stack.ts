@@ -2,9 +2,13 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Construct } from 'constructs';
 import { join } from 'path';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 
 export class ProductServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -69,6 +73,35 @@ export class ProductServiceStack extends cdk.Stack {
     productsTable.grantWriteData(createProductLambda);
     stockTable.grantWriteData(createProductLambda);
 
+    const catalogItemsQueue = new sqs.Queue(this, "catalog-items");
+
+    const catalogBatchProcess = new NodejsFunction(this, 'catalog-batch-process', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.seconds(5),
+      handler: 'main',
+      entry: join(__dirname, 'handler-catalog-batch-process.ts'),
+      environment: {
+        PRODUCTS_TABLE: productsTable.tableName,
+        STOCK_TABLE: stockTable.tableName,
+      },
+    });
+
+    productsTable.grantWriteData(catalogBatchProcess);
+    stockTable.grantWriteData(catalogBatchProcess);
+
+    catalogBatchProcess.addEventSource(new SqsEventSource(catalogItemsQueue, {
+      batchSize: 5,
+    }));
+
+    const createProductTopic = new sns.Topic(this, 'createProductTopic', {
+      displayName: 'Product Creation Notification'
+    });
+
+    createProductTopic.addSubscription(new subscriptions.EmailSubscription('process.env.EMAIL_SUBSCRIPTION'));
+    createProductTopic.grantPublish(catalogBatchProcess);
+    catalogBatchProcess.addEnvironment('CREATE_PRODUCT_TOPIC_ARN', createProductTopic.topicArn);
+
     const api = new apigateway.RestApi(this, "product-api", {
       restApiName: "Product Service",
       description: "This API handles product requests."
@@ -116,6 +149,16 @@ export class ProductServiceStack extends cdk.Stack {
     productByIdResource.addCorsPreflight({
       allowOrigins: ['https://d2x7im1yk2wi06.cloudfront.net', 'https://d2x7im1yk2wi06.cloudfront.net/*'],
       allowMethods: ['GET'],
+    });
+
+    new cdk.CfnOutput(this, 'CatalogItemsQueueUrl', {
+      value: catalogItemsQueue.queueUrl,
+      exportName: 'CatalogItemsQueueUrl',
+    });
+
+    new cdk.CfnOutput(this, 'CatalogItemsQueueArn', {
+      value: catalogItemsQueue.queueArn,
+      exportName: 'CatalogItemsQueueArn',
     });
   }
 }
