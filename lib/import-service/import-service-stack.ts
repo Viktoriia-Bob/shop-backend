@@ -17,6 +17,14 @@ export class ImportServiceStack extends cdk.Stack {
         queueArn: cdk.Fn.importValue('CatalogItemsQueueArn'),
     });
 
+    const authorizerFn = lambda.Function.fromFunctionArn(this, 'basic-authorizer-import', cdk.Fn.importValue('BasicAuthorizerLambdaArn'));
+
+    const authorizer = new apigateway.TokenAuthorizer(this, 'import-authorizer', {
+        handler: authorizerFn,
+        identitySource: 'method.request.header.Authorization',
+    });
+
+
     const bucket = new s3.Bucket(this, 'uploaded', {
       versioned: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -79,6 +87,8 @@ export class ImportServiceStack extends cdk.Stack {
         proxy: true,
         integrationResponses: [{ statusCode: '200' }]
     }), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.CUSTOM,
         methodResponses: [{ statusCode: '200'}, { statusCode: '400' }, { statusCode: '500' }]
     });
 
